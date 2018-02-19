@@ -103,46 +103,51 @@ func (r *pooledFlateReader) Close() error {
 }
 
 var (
-	compressors   sync.Map // map[uint16]Compressor
-	decompressors sync.Map // map[uint16]Decompressor
+	mu sync.RWMutex // guards compressor and decompressor maps
+
+	compressors = map[uint16]Compressor{
+		Store:   func(w io.Writer) (io.WriteCloser, error) { return &nopCloser{w}, nil },
+		Deflate: func(w io.Writer) (io.WriteCloser, error) { return newFlateWriter(w), nil },
+	}
+
+	decompressors = map[uint16]Decompressor{
+		Store:   ioutil.NopCloser,
+		Deflate: newFlateReader,
+	}
 )
-
-func init() {
-	compressors.Store(Store, Compressor(func(w io.Writer) (io.WriteCloser, error) { return &nopCloser{w}, nil }))
-	compressors.Store(Deflate, Compressor(func(w io.Writer) (io.WriteCloser, error) { return newFlateWriter(w), nil }))
-
-	decompressors.Store(Store, Decompressor(ioutil.NopCloser))
-	decompressors.Store(Deflate, Decompressor(newFlateReader))
-}
 
 // RegisterDecompressor allows custom decompressors for a specified method ID.
 // The common methods Store and Deflate are built in.
 func RegisterDecompressor(method uint16, dcomp Decompressor) {
-	if _, dup := decompressors.LoadOrStore(method, dcomp); dup {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if _, ok := decompressors[method]; ok {
 		panic("decompressor already registered")
 	}
+	decompressors[method] = dcomp
 }
 
 // RegisterCompressor registers custom compressors for a specified method ID.
 // The common methods Store and Deflate are built in.
 func RegisterCompressor(method uint16, comp Compressor) {
-	if _, dup := compressors.LoadOrStore(method, comp); dup {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if _, ok := compressors[method]; ok {
 		panic("compressor already registered")
 	}
+	compressors[method] = comp
 }
 
 func compressor(method uint16) Compressor {
-	ci, ok := compressors.Load(method)
-	if !ok {
-		return nil
-	}
-	return ci.(Compressor)
+	mu.RLock()
+	defer mu.RUnlock()
+	return compressors[method]
 }
 
 func decompressor(method uint16) Decompressor {
-	di, ok := decompressors.Load(method)
-	if !ok {
-		return nil
-	}
-	return di.(Decompressor)
+	mu.RLock()
+	defer mu.RUnlock()
+	return decompressors[method]
 }

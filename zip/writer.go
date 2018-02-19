@@ -11,8 +11,9 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
-	"unicode/utf8"
 )
+
+// TODO(adg): support zip file comments
 
 // Writer implements a zip file writer.
 type Writer struct {
@@ -21,10 +22,6 @@ type Writer struct {
 	last        *fileWriter
 	closed      bool
 	compressors map[uint16]Compressor
-
-	// testHookCloseSizeOffset if non-nil is called with the size
-	// of offset of the central directory at Close.
-	testHookCloseSizeOffset func(size, offset uint64)
 }
 
 type header struct {
@@ -101,7 +98,6 @@ func (w *Writer) Close() error {
 			b.uint32(h.CompressedSize)
 			b.uint32(h.UncompressedSize)
 		}
-
 		b.uint16(uint16(len(h.Name)))
 		b.uint16(uint16(len(h.Extra)))
 		b.uint16(uint16(len(h.Comment)))
@@ -131,11 +127,7 @@ func (w *Writer) Close() error {
 	size := uint64(end - start)
 	offset := uint64(start)
 
-	if f := w.testHookCloseSizeOffset; f != nil {
-		f(size, offset)
-	}
-
-	if records >= uint16max || size >= uint32max || offset >= uint32max {
+	if records > uint16max || size > uint32max || offset > uint32max {
 		var buf [directory64EndLen + directory64LocLen]byte
 		b := writeBuf(buf[:])
 
@@ -200,20 +192,6 @@ func (w *Writer) Create(name string) (io.Writer, error) {
 	return w.CreateHeader(header)
 }
 
-func hasValidUTF8(s string) bool {
-	n := 0
-	for _, r := range s {
-		// By default, ZIP uses CP437, which is only identical to ASCII for the printable characters.
-		if r < 0x20 || r >= 0x7f {
-			if !utf8.ValidRune(r) {
-				return false
-			}
-			n++
-		}
-	}
-	return n > 0
-}
-
 // CreateHeader adds a file to the zip file using the provided FileHeader
 // for the file metadata.
 // It returns a Writer to which the file contents should be written.
@@ -233,10 +211,6 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	}
 
 	fh.Flags |= 0x8 // we will write a data descriptor
-
-	if hasValidUTF8(fh.Name) || hasValidUTF8(fh.Comment) {
-		fh.Flags |= 0x800 // filename or comment have valid utf-8 string
-	}
 
 	fh.CreatorVersion = fh.CreatorVersion&0xff00 | zipVersion20 // preserve compatibility byte
 	fh.ReaderVersion = zipVersion20
