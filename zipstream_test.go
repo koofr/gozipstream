@@ -3,6 +3,7 @@ package gozipstream
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -63,7 +64,7 @@ func TestZipStream(t *testing.T) {
 	}
 
 	if file.UncompressedSize64 != uint64(info.Size()) {
-		t.Errorf("Wrong file size: %s", file.UncompressedSize64)
+		t.Errorf("Wrong file size: %d", file.UncompressedSize64)
 	}
 
 	dir := reader.File[1]
@@ -73,6 +74,84 @@ func TestZipStream(t *testing.T) {
 	}
 
 	if dir.UncompressedSize64 != uint64(0) {
-		t.Errorf("Wrong dir size: %s", dir.UncompressedSize64)
+		t.Errorf("Wrong dir size: %d", dir.UncompressedSize64)
 	}
+}
+
+func TestZipStreamAddSize(t *testing.T) {
+	data := make([]byte, 1*1024*1024+42)
+
+	z := NewZipStream()
+
+	go func() {
+		err := z.AddSize(int64(len(data)), "test.bin", time.Now())
+		if err != nil {
+			t.Errorf("ZipStream AddFile error: %s", err)
+		}
+
+		err = z.End()
+		if err != nil {
+			t.Errorf("ZipStream Read error: %s", err)
+		}
+	}()
+
+	estimatedTotalSize, err := z.TotalSize()
+	if err != nil {
+		t.Errorf("ZipStream TotalSize error: %s", err)
+	}
+	if estimatedTotalSize != 1048748 {
+		t.Errorf("expected estimatedTotalSize to be 1048748 but is %d", estimatedTotalSize)
+	}
+
+	z = NewZipStream()
+
+	go func() {
+		err := z.Add(bytes.NewBuffer(data), "test.bin", time.Now())
+		if err != nil {
+			t.Errorf("ZipStream AddFile error: %s", err)
+		}
+
+		err = z.End()
+		if err != nil {
+			t.Errorf("ZipStream Read error: %s", err)
+		}
+	}()
+
+	totalSize, err := z.TotalSize()
+	if err != nil {
+		t.Errorf("ZipStream TotalSize error: %s", err)
+	}
+	if totalSize != 1048748 {
+		t.Errorf("expected totalSize to be 1048748 but is %d", totalSize)
+	}
+}
+
+func TestZipStreamAddSizeBenchmark(t *testing.T) {
+	var size int64 = 10 * 1024 * 1024 * 1024 // 10 GB
+
+	z := NewZipStream()
+
+	go func() {
+		err := z.AddSize(size, "test.bin", time.Now())
+		if err != nil {
+			t.Errorf("ZipStream AddFile error: %s", err)
+		}
+
+		err = z.End()
+		if err != nil {
+			t.Errorf("ZipStream Read error: %s", err)
+		}
+	}()
+
+	start := time.Now()
+
+	estimatedTotalSize, err := z.TotalSize()
+	if err != nil {
+		t.Errorf("ZipStream TotalSize error: %s", err)
+	}
+	if estimatedTotalSize != 10737418482 {
+		t.Errorf("expected estimatedTotalSize to be 10737418482 but is %d", estimatedTotalSize)
+	}
+
+	fmt.Printf("%s to copy 10 GB\n", time.Now().Sub(start))
 }

@@ -44,6 +44,12 @@ func (z *ZipStream) AddFile(fullPath string, relPath string) (err error) {
 	return z.Add(file, relPath, info.ModTime())
 }
 
+func (z *ZipStream) AddSize(size int64, name string, mtime time.Time) (err error) {
+	reader := newReaderOfSize(size)
+
+	return z.Add(reader, name, mtime)
+}
+
 func (z *ZipStream) Add(reader io.Reader, name string, mtime time.Time) (err error) {
 	isDir := strings.HasSuffix(name, "/")
 
@@ -91,4 +97,26 @@ func (z *ZipStream) Read(p []byte) (n int, err error) {
 
 func (z *ZipStream) Close() error {
 	return z.reader.Close()
+}
+
+func (z *ZipStream) TotalSize() (totalSize int64, err error) {
+	buf := make([]byte, 64*1024)
+
+	for {
+		n, err := z.Read(buf)
+		totalSize += int64(n)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	err = z.Close()
+	if err != nil {
+		return 0, err
+	}
+
+	return totalSize, nil
 }
