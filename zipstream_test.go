@@ -3,7 +3,6 @@ package gozipstream
 import (
 	"archive/zip"
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -126,7 +125,7 @@ func TestZipStreamAddSize(t *testing.T) {
 	}
 }
 
-func TestZipStreamAddSizeBenchmark(t *testing.T) {
+func TestZipStreamAddSizeZip64(t *testing.T) {
 	var size int64 = 10 * 1024 * 1024 * 1024 // 10 GB
 
 	z := NewZipStream()
@@ -143,15 +142,76 @@ func TestZipStreamAddSizeBenchmark(t *testing.T) {
 		}
 	}()
 
-	start := time.Now()
-
 	estimatedTotalSize, err := z.TotalSize()
 	if err != nil {
 		t.Errorf("ZipStream TotalSize error: %s", err)
 	}
-	if estimatedTotalSize != 10737418482 {
-		t.Errorf("expected estimatedTotalSize to be 10737418482 but is %d", estimatedTotalSize)
+
+	z = NewZipStream()
+
+	go func() {
+		r := &readerOfSize{
+			size: size,
+		}
+		err := z.Add(r, "test.bin", time.Now())
+		if err != nil {
+			t.Errorf("ZipStream AddFile error: %s", err)
+		}
+
+		err = z.End()
+		if err != nil {
+			t.Errorf("ZipStream Read error: %s", err)
+		}
+	}()
+
+	totalSize, err := readSize(z)
+	if err != nil {
+		t.Errorf("readSize error: %s", err)
 	}
 
-	fmt.Printf("%s to copy 10 GB\n", time.Now().Sub(start))
+	if estimatedTotalSize != totalSize {
+		t.Errorf("expected estimatedTotalSize to be %d but is %d", totalSize, estimatedTotalSize)
+	}
+}
+
+func readSize(r io.ReadCloser) (totalSize int64, err error) {
+	buf := make([]byte, 64*1024)
+
+	for {
+		n, err := r.Read(buf)
+		totalSize += int64(n)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	err = r.Close()
+	if err != nil {
+		return 0, err
+	}
+
+	return totalSize, nil
+}
+
+type readerOfSize struct {
+	size        int64
+	alreadyRead int64
+}
+
+func (r *readerOfSize) Read(p []byte) (n int, err error) {
+	l := len(p)
+	l64 := int64(l)
+	if r.alreadyRead+l64 >= r.size {
+		remaining := r.size - r.alreadyRead
+		if remaining < 0 {
+			remaining = 0
+		}
+		r.alreadyRead += remaining
+		return int(remaining), io.EOF
+	}
+	r.alreadyRead += l64
+	return l, nil
 }

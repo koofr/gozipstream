@@ -1,17 +1,20 @@
 package gozipstream
 
 import (
-	"archive/zip"
 	"io"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/koofr/gozipstream/zip"
 )
 
 type ZipStream struct {
 	reader *io.PipeReader
 	writer *io.PipeWriter
 	zip    *zip.Writer
+
+	filesSize int64
 }
 
 func NewZipStream() (z *ZipStream) {
@@ -21,6 +24,8 @@ func NewZipStream() (z *ZipStream) {
 		reader: reader,
 		writer: writer,
 		zip:    zip.NewWriter(writer),
+
+		filesSize: 0,
 	}
 
 	return
@@ -45,12 +50,14 @@ func (z *ZipStream) AddFile(fullPath string, relPath string) (err error) {
 }
 
 func (z *ZipStream) AddSize(size int64, name string, mtime time.Time) (err error) {
-	reader := newReaderOfSize(size)
-
-	return z.Add(reader, name, mtime)
+	return z.add(nil, size, name, mtime)
 }
 
 func (z *ZipStream) Add(reader io.Reader, name string, mtime time.Time) (err error) {
+	return z.add(reader, 0, name, mtime)
+}
+
+func (z *ZipStream) add(reader io.Reader, size int64, name string, mtime time.Time) (err error) {
 	isDir := strings.HasSuffix(name, "/")
 
 	header := &zip.FileHeader{
@@ -71,11 +78,25 @@ func (z *ZipStream) Add(reader io.Reader, name string, mtime time.Time) (err err
 	f, err := z.zip.CreateHeader(header)
 
 	if err != nil {
-		return
+		return err
 	}
 
 	if !isDir {
-		_, err = io.Copy(f, reader)
+		if reader != nil {
+			_, err = io.Copy(f, reader)
+			if err != nil {
+				return err
+			}
+		} else {
+			z.filesSize += size
+
+			err = f.(interface {
+				AddSize(int64) error
+			}).AddSize(size)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return
@@ -117,6 +138,8 @@ func (z *ZipStream) TotalSize() (totalSize int64, err error) {
 	if err != nil {
 		return 0, err
 	}
+
+	totalSize += z.filesSize
 
 	return totalSize, nil
 }
