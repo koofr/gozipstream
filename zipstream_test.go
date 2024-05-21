@@ -98,8 +98,8 @@ func TestZipStreamAddSize(t *testing.T) {
 	if err != nil {
 		t.Errorf("ZipStream TotalSize error: %s", err)
 	}
-	if estimatedTotalSize != 1048748 {
-		t.Errorf("expected estimatedTotalSize to be 1048748 but is %d", estimatedTotalSize)
+	if estimatedTotalSize != 1048766 {
+		t.Errorf("expected estimatedTotalSize to be 1048766 but is %d", estimatedTotalSize)
 	}
 
 	z = NewZipStream()
@@ -120,8 +120,8 @@ func TestZipStreamAddSize(t *testing.T) {
 	if err != nil {
 		t.Errorf("ZipStream TotalSize error: %s", err)
 	}
-	if totalSize != 1048748 {
-		t.Errorf("expected totalSize to be 1048748 but is %d", totalSize)
+	if totalSize != 1048766 {
+		t.Errorf("expected totalSize to be 1048766 but is %d", totalSize)
 	}
 }
 
