@@ -62,12 +62,11 @@ func (z *ZipStream) add(reader io.Reader, size int64, name string, mtime time.Ti
 
 	header := &zip.FileHeader{
 		Name:           name,
-		Method:         zip.Store,
 		CreatorVersion: 0x0300, // unix
 		Flags:          0x800,  // utf8
+		Method:         zip.Store,
+		Modified:       mtime,
 	}
-
-	header.SetModTime(mtime)
 
 	if isDir {
 		header.SetMode(0755)
